@@ -29,6 +29,7 @@ class ConfigDialog(tk.Toplevel):
             ("Frame Buffer", "frame_buffer_size"),
             ("Header Bytes", "header_bytes"),
             ("Jitter Delay", "jitter_delay"),
+            ("Packets per Frame", "packets_per_frame"),
             ("Keepalive Interval", "keepalive_interval"),
         ]
 
