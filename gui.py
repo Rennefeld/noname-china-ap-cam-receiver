@@ -6,6 +6,7 @@ from PIL import Image, ImageTk
 import cv2
 import numpy as np
 from config import StreamConfig
+from config_dialog import ConfigDialog
 from streamer import FrameProcessor, CameraStreamer
 
 OUTPUT_DIR = "recordings"
@@ -20,7 +21,7 @@ class CameraApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("AP Camera Receiver")
-        self.config = StreamConfig()
+        self.config = StreamConfig.load()
         self.processor = FrameProcessor()
         self.streamer = CameraStreamer(self.config, self.processor)
 
@@ -36,32 +37,9 @@ class CameraApp:
 
     # ----------------- UI SETUP -----------------
     def _build_ui(self):
-        cfg = ttk.LabelFrame(self.root, text="Config")
-        cfg.pack(fill="x", padx=5, pady=5)
-
-        self.cam_ip_var = tk.StringVar(value=self.config.cam_ip)
-        self.cam_video_port_var = tk.IntVar(value=self.config.cam_video_port)
-        self.cam_audio_port_var = tk.IntVar(value=self.config.cam_audio_port)
-        self.client_video_port_var = tk.IntVar(value=self.config.client_video_port)
-        self.client_audio_port_var = tk.IntVar(value=self.config.client_audio_port)
-        self.buffer_size_var = tk.IntVar(value=self.config.frame_buffer_size)
-        self.header_bytes_var = tk.IntVar(value=self.config.header_bytes)
-        self.jitter_var = tk.IntVar(value=self.config.jitter_delay)
-
-        row = 0
-        for text, var in (
-            ("Camera IP", self.cam_ip_var),
-            ("Cam Video Port", self.cam_video_port_var),
-            ("Cam Audio Port", self.cam_audio_port_var),
-            ("Client Video Port", self.client_video_port_var),
-            ("Client Audio Port", self.client_audio_port_var),
-            ("Frame Buffer", self.buffer_size_var),
-            ("Header Bytes", self.header_bytes_var),
-            ("Jitter Delay", self.jitter_var),
-        ):
-            ttk.Label(cfg, text=text).grid(row=row, column=0, sticky="w")
-            ttk.Entry(cfg, textvariable=var, width=15).grid(row=row, column=1, padx=5, pady=2)
-            row += 1
+        menu_bar = tk.Menu(self.root)
+        self.root.config(menu=menu_bar)
+        menu_bar.add_command(label="Settings", command=self.open_config_dialog)
 
         self.canvas = tk.Canvas(self.root, bg="black")
         self.canvas.pack(fill="both", expand=True)
@@ -102,7 +80,6 @@ class CameraApp:
     # ----------------- STREAM CONTROL -----------------
     def toggle_stream(self):
         if not self.streamer.running:
-            self._apply_config()
             self.streamer.start(self._on_frame)
             self.stream_btn.config(text="Stop Stream")
             self.record_btn.config(state="normal")
@@ -114,16 +91,6 @@ class CameraApp:
             self.record_btn.config(state="disabled")
             self.current_frame = None
             self._show_off_message()
-
-    def _apply_config(self):
-        self.config.cam_ip = self.cam_ip_var.get()
-        self.config.cam_video_port = int(self.cam_video_port_var.get())
-        self.config.cam_audio_port = int(self.cam_audio_port_var.get())
-        self.config.client_video_port = int(self.client_video_port_var.get())
-        self.config.client_audio_port = int(self.client_audio_port_var.get())
-        self.config.frame_buffer_size = int(self.buffer_size_var.get())
-        self.config.header_bytes = int(self.header_bytes_var.get())
-        self.config.jitter_delay = int(self.jitter_var.get())
 
     # ----------------- FRAME HANDLING -----------------
     def _on_frame(self, img):
@@ -214,4 +181,12 @@ class CameraApp:
     def on_volume_change(self, _=None):
         # Placeholder for real volume control
         pass
+
+    def open_config_dialog(self) -> None:
+        ConfigDialog(self.root, self.config, on_save=self._on_config_saved)
+
+    def _on_config_saved(self) -> None:
+        if self.streamer.running:
+            self.streamer.stop()
+            self.streamer.start(self._on_frame)
 
