@@ -3,7 +3,10 @@ import threading
 import time
 import io
 from typing import Callable, Optional
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError, ImageFile
+
+# Allow loading frames even if the JPEG data is slightly truncated.
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 import numpy as np
 import cv2
 from config import StreamConfig
@@ -102,6 +105,7 @@ class CameraStreamer:
                 self.last_frame_time = now
                 try:
                     img = Image.open(io.BytesIO(jpeg_data))
+                    img.load()  # ensure data is read before processing
                     img = self.processor.process(img)
                 except (UnidentifiedImageError, OSError):
                     continue
