@@ -45,8 +45,12 @@ class CameraStreamer:
         self.last_frame_time = 0.0
         self.current_packet_count = 0
         self.last_packet_count = 0
-        self.frame_queue: Optional[queue.Queue] = None
-        self._recv_buffer = bytearray(self.config.chunk_size + self.config.header_bytes)
+        self.frame_callback: Optional[Callable[[Image.Image], None]] = None
+        # Allocate a generous buffer so packets never get truncated even if the
+        # configured chunk size does not exactly match the incoming packet
+        # length. The buffer size is kept configurable and defaults to 8MB to
+        # avoid any compatibility issues with different cameras.
+        self._recv_buffer = bytearray(self.config.frame_buffer_size)
         self._frame_buffer = ChunkedFrameBuffer(
             self.config.frame_width,
             self.config.frame_height,
@@ -95,7 +99,6 @@ class CameraStreamer:
         self.current_packet_count = 0
         self.last_packet_count = 0
         self._frame_buffer.reset()
-        self.frame_queue = None
 
     def _send_keepalive(self):
         payload_8070 = b"0f"
@@ -148,6 +151,8 @@ class CameraStreamer:
             self.current_packet_count = 0
             img = self._frame_buffer.to_image()
             img = self.processor.process(img)
+            if self.frame_callback:
+                self.frame_callback(img)
             if self.frame_queue is not None:
                 try:
                     self.frame_queue.put_nowait(img)
