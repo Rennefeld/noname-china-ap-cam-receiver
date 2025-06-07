@@ -79,6 +79,9 @@ class CameraApp:
                                         command=self.on_volume_change)
         self.volume_slider.grid(row=0, column=9, padx=5)
 
+        self.packets_label = ttk.Label(controls, text="Pkts: 0")
+        self.packets_label.grid(row=0, column=10, padx=5)
+
     # ----------------- STREAM CONTROL -----------------
     def toggle_stream(self):
         if not self.streamer.running:
@@ -97,6 +100,7 @@ class CameraApp:
     # ----------------- FRAME HANDLING -----------------
     def _on_frame(self, img):
         self.current_frame = img
+        self.packets_label.config(text=f"Pkts: {self.streamer.packets_in_frame()}")
         if self.recording and self.video_writer:
             frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             self.video_writer.write(frame)
