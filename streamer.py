@@ -139,8 +139,9 @@ class CameraStreamer:
             if binascii.crc_hqx(payload, 0xFFFF) != crc_recv:
                 self._send_nack(seq)
                 continue
+            is_new = seq not in self._frame_buffer.received
             complete = self._frame_buffer.add(seq, payload)
-            if seq not in self._frame_buffer.received:
+            if is_new:
                 self.current_packet_count += 1
             if not complete:
                 continue

@@ -39,6 +39,7 @@ def test_streamer_receives_frame():
             except queue.Empty:
                 time.sleep(0.1)
         assert received, "no frame received"
+        assert streamer.packets_in_frame() == config.num_chunks
     finally:
         streamer.stop()
         sender.join(timeout=1)
