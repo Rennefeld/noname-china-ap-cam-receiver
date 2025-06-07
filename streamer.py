@@ -43,6 +43,7 @@ class CameraStreamer:
         self.current_packet_count = 0
         self.last_packet_count = 0
         self.frame_callback: Optional[Callable[[Image.Image], None]] = None
+        self._recv_buffer = bytearray(self.config.frame_buffer_size)
 
     def packets_in_frame(self) -> int:
         """Return number of packets used to assemble the last frame."""
@@ -52,7 +53,9 @@ class CameraStreamer:
             return
         self.frame_callback = callback
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.config.frame_buffer_size)
         self.keepalive_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.keepalive_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.config.frame_buffer_size)
         try:
             self.sock.bind(("", self.config.client_video_port))
         except Exception:
@@ -96,14 +99,15 @@ class CameraStreamer:
             time.sleep(self.config.keepalive_interval)
 
     def _recv_frames(self):
+        buffer = memoryview(self._recv_buffer)
         while self.running:
             try:
-                data, addr = self.sock.recvfrom(self.config.frame_buffer_size)
+                nbytes, addr = self.sock.recvfrom_into(buffer)
             except Exception:
                 break
             if addr[0] != self.config.cam_ip:
                 continue
-            self.jpeg_buffer += data
+            self.jpeg_buffer.extend(buffer[:nbytes])
             self.current_packet_count += 1
             if self.current_packet_count < self.config.packets_per_frame:
                 continue
@@ -122,10 +126,6 @@ class CameraStreamer:
                 break
             jpeg_data = self.jpeg_buffer[soi:eoi + 2]
             del self.jpeg_buffer[:eoi + 2]
-            try:
-                Image.open(io.BytesIO(jpeg_data)).verify()
-            except Exception:
-                continue
             now = time.monotonic()
             if now - self.last_frame_time < 0.05:
                 continue
