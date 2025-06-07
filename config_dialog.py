@@ -31,7 +31,6 @@ class ConfigDialog(tk.Toplevel):
             ("Jitter Delay", "jitter_delay"),
             ("Packets per Frame", "packets_per_frame"),
             ("Keepalive Interval", "keepalive_interval"),
-            ("Alignment Threshold", "alignment_threshold"),
         ]
 
         frame = ttk.Frame(self)
@@ -84,7 +83,11 @@ class ConfigDialog(tk.Toplevel):
                 continue
             current_value = getattr(self._config, field)
             cast_type = type(current_value)
-            setattr(self._config, field, cast_type(var.get()))
+            val = var.get()
+            try:
+                setattr(self._config, field, cast_type(val))
+            except ValueError:
+                setattr(self._config, field, current_value)
         self._config.save()
         if self._on_save:
             self._on_save()
