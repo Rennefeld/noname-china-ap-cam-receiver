@@ -14,3 +14,16 @@ Run with:
 pip install -r requirements.txt
 python main.py
 ```
+
+## Packaging
+
+To create a standalone executable for Windows, install PyInstaller and run:
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile main.py
+```
+
+For an Android APK, the project can be packaged with [BeeWare](https://beeware.org/) or
+[Buildozer](https://github.com/kivy/buildozer). Set up the chosen toolchain and execute
+the build command on a machine with the required Android SDK/NDK installed.
