@@ -11,7 +11,7 @@ class StreamConfig:
     cam_audio_port: int = 8082
     client_video_port: int = 53310
     client_audio_port: int = 53311
-    frame_buffer_size: int = 2048
+    frame_buffer_size: int = 65536
     header_bytes: int = 0
     jitter_delay: int = 0
 

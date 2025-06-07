@@ -9,5 +9,6 @@ The preview canvas keeps a 1:1 aspect ratio and shows a message if the stream
 is not running.
 Run with:
 ```bash
+pip install -r requirements.txt
 python main.py
 ```

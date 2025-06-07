@@ -107,10 +107,13 @@ class CameraApp:
             return
         canvas_w = self.canvas.winfo_width()
         canvas_h = self.canvas.winfo_height()
-        side = min(canvas_w, canvas_h)
-        img = self.current_frame.resize((side, side), Image.LANCZOS)
-        x = (canvas_w - side) // 2
-        y = (canvas_h - side) // 2
+        img_w, img_h = self.current_frame.size
+        scale = min(canvas_w / img_w, canvas_h / img_h)
+        new_w = int(img_w * scale)
+        new_h = int(img_h * scale)
+        img = self.current_frame.resize((new_w, new_h), Image.LANCZOS)
+        x = (canvas_w - new_w) // 2
+        y = (canvas_h - new_h) // 2
         self.tk_image = ImageTk.PhotoImage(img)
         self.canvas.create_image(x, y, anchor=tk.NW, image=self.tk_image)
 
@@ -186,7 +189,10 @@ class CameraApp:
         ConfigDialog(self.root, self.config, on_save=self._on_config_saved)
 
     def _on_config_saved(self) -> None:
-        if self.streamer.running:
+        was_running = self.streamer.running
+        if was_running:
             self.streamer.stop()
+        self.streamer = CameraStreamer(self.config, self.processor)
+        if was_running:
             self.streamer.start(self._on_frame)
 
