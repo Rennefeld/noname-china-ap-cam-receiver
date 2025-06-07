@@ -4,6 +4,7 @@ import subprocess
 import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox
+import queue
 from PIL import Image, ImageTk
 import cv2
 import numpy as np
@@ -43,6 +44,7 @@ class CameraApp:
         self.config = StreamConfig.load()
         self.processor = FrameProcessor()
         self.streamer = CameraStreamer(self.config, self.processor)
+        self.frame_queue: queue.Queue = queue.Queue(maxsize=2)
 
         self.mic_on = False
         self.recording = False
@@ -52,11 +54,11 @@ class CameraApp:
         self.record_indicator_state = False
         self.blink_job = None
         self.volume = tk.DoubleVar(value=50)
-        self.align_threshold = tk.DoubleVar(value=self.config.alignment_threshold)
         self.prev_frame = None
 
         self._build_ui()
         self._show_off_message()
+        self.root.after(10, self._poll_queue)
 
     # ----------------- UI SETUP -----------------
     def _build_ui(self):
@@ -117,50 +119,49 @@ class CameraApp:
         )
         self.volume_slider.grid(row=0, column=9, padx=5)
 
-        ttk.Label(controls, text="Align").grid(row=0, column=10, padx=5)
-        self.align_slider = ttk.Scale(
-            controls,
-            from_=0,
-            to=100,
-            variable=self.align_threshold,
-            command=self.on_align_change,
-        )
-        self.align_slider.grid(row=0, column=11, padx=5)
-
-        self.align_diff_label = ttk.Label(controls, text="Diff: 0")
-        self.align_diff_label.grid(row=0, column=12, padx=5)
+        self.offset_label = ttk.Label(controls, text="Offset: 0")
+        self.offset_label.grid(row=0, column=10, padx=5)
 
         self.packets_label = ttk.Label(controls, text="Pkts: 0")
-        self.packets_label.grid(row=0, column=13, padx=5)
+        self.packets_label.grid(row=0, column=11, padx=5)
 
     # ----------------- STREAM CONTROL -----------------
     def toggle_stream(self):
         if not self.streamer.running:
-            self.streamer.start(self._on_frame)
+            self.streamer.start(self.frame_queue)
             self.stream_btn.config(text="Stop Stream")
             self.record_btn.config(state="normal")
         else:
             if self.recording:
                 self.toggle_record()
             self.streamer.stop()
+            with self.frame_queue.mutex:
+                self.frame_queue.queue.clear()
             self.stream_btn.config(text="Start Stream")
             self.record_btn.config(state="disabled")
             self.current_frame = None
             self._show_off_message()
 
     # ----------------- FRAME HANDLING -----------------
-    def _on_frame(self, img):
-        self.current_frame = img
+    def _handle_frame(self, img):
         self.packets_label.config(text=f"Pkts: {self.streamer.packets_in_frame()}")
-        diff = self._compute_alignment_diff(self.prev_frame, img)
-        self.prev_frame = img.copy()
-        self.align_diff_label.config(text=f"Diff: {diff:.1f}")
-        color = "red" if diff > self.align_threshold.get() else "green"
-        self.align_diff_label.config(foreground=color)
+        aligned, offset = self._align_frame(self.prev_frame, img)
+        self.prev_frame = aligned.copy()
+        self.current_frame = aligned
+        self.offset_label.config(text=f"Offset: {offset}")
         if self.recording and self.video_writer:
-            frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            frame = cv2.cvtColor(np.array(aligned), cv2.COLOR_RGB2BGR)
             self.video_writer.write(frame)
         self._display_current_frame()
+
+    def _poll_queue(self):
+        try:
+            img = self.frame_queue.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            self._handle_frame(img)
+        self.root.after(10, self._poll_queue)
 
     def _display_current_frame(self):
         self.canvas.delete("all")
@@ -181,24 +182,29 @@ class CameraApp:
         if self.recording and self.record_indicator_state:
             self.canvas.create_oval(10, 10, 30, 30, fill="red", tags="record_indicator")
 
-    def _compute_alignment_diff(self, prev: Image.Image | None, curr: Image.Image) -> float:
+    def _align_frame(self, prev: Image.Image | None, curr: Image.Image, max_offset: int = 10) -> tuple[Image.Image, int]:
         if prev is None:
-            return 0.0
-        prev_np = np.array(prev.convert("L"))
-        curr_np = np.array(curr.convert("L"))
-        h = min(prev_np.shape[0], curr_np.shape[0])
-        packets = max(1, self.config.packets_per_frame)
-        slice_h = h // packets
-        if slice_h == 0:
-            slice_h = 1
-        diffs = []
-        for i in range(packets):
-            y = min((i + 1) * slice_h, h) - 1
-            prev_mean = prev_np[y, :].mean()
-            curr_start = i * slice_h
-            curr_mean = curr_np[curr_start, :].mean()
-            diffs.append(abs(prev_mean - curr_mean))
-        return float(np.mean(diffs))
+            return curr, 0
+        prev_g = np.array(prev.convert("L"))
+        curr_g = np.array(curr.convert("L"))
+        h = min(prev_g.shape[0], curr_g.shape[0])
+        w = min(prev_g.shape[1], curr_g.shape[1])
+        template_h = min(80, h)
+        template = prev_g[h - template_h : h, :w]
+        search_top = min(curr_g.shape[0], template_h + max_offset * 2)
+        search = curr_g[:search_top, :w]
+        res = cv2.matchTemplate(search, template, cv2.TM_CCORR_NORMED)
+        _, _, _, max_loc = cv2.minMaxLoc(res)
+        offset = max_loc[1] - max_offset
+        if offset == 0:
+            return curr, 0
+        curr_np = np.array(curr)
+        aligned = np.zeros_like(curr_np)
+        if offset > 0:
+            aligned[:-offset] = curr_np[offset:]
+        else:
+            aligned[-offset:] = curr_np[: curr_np.shape[0] + offset]
+        return Image.fromarray(aligned), offset
 
     def _show_off_message(self):
         self.canvas.delete("all")

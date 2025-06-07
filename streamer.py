@@ -2,6 +2,8 @@ import socket
 import threading
 import time
 import io
+import binascii
+import queue
 from typing import Callable, Optional
 from assembler import ChunkedFrameBuffer
 from PIL import Image, ImageOps, UnidentifiedImageError, ImageFile
@@ -59,10 +61,10 @@ class CameraStreamer:
     def packets_in_frame(self) -> int:
         """Return number of packets used to assemble the last frame."""
         return self.last_packet_count
-    def start(self, callback: Callable[[Image.Image], None]):
+    def start(self, frame_queue: queue.Queue):
         if self.running:
             return
-        self.frame_callback = callback
+        self.frame_queue = frame_queue
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.config.frame_buffer_size)
         self.keepalive_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -110,6 +112,18 @@ class CameraStreamer:
                 pass
             time.sleep(self.config.keepalive_interval)
 
+    def _send_nack(self, seq: int) -> None:
+        """Request retransmission for a missing or corrupted sequence."""
+        if not self.keepalive_sock:
+            return
+        msg = b"NACK" + seq.to_bytes(2, "big")
+        try:
+            self.keepalive_sock.sendto(
+                msg, (self.config.cam_ip, self.config.cam_video_port)
+            )
+        except Exception:
+            pass
+
     def _recv_frames(self):
         buffer = memoryview(self._recv_buffer)
         header = self.config.header_bytes
@@ -123,7 +137,11 @@ class CameraStreamer:
             if nbytes <= header:
                 continue
             seq = int.from_bytes(buffer[:3], "big")
+            crc_recv = int.from_bytes(buffer[3:5], "big")
             payload = buffer[header:nbytes].tobytes()
+            if binascii.crc_hqx(payload, 0xFFFF) != crc_recv:
+                self._send_nack(seq)
+                continue
             complete = self._frame_buffer.add(seq, payload)
             if seq not in self._frame_buffer.received:
                 self.current_packet_count += 1
@@ -135,6 +153,11 @@ class CameraStreamer:
             img = self.processor.process(img)
             if self.frame_callback:
                 self.frame_callback(img)
+            if self.frame_queue is not None:
+                try:
+                    self.frame_queue.put_nowait(img)
+                except queue.Full:
+                    pass
             if self.config.jitter_delay:
                 time.sleep(self.config.jitter_delay / 1000.0)
             self._frame_buffer.reset()
@@ -160,8 +183,11 @@ class CameraStreamer:
                 img = self.processor.process(img)
             except (UnidentifiedImageError, OSError):
                 continue
-            if self.frame_callback:
-                self.frame_callback(img)
+            if self.frame_queue is not None:
+                try:
+                    self.frame_queue.put_nowait(img)
+                except queue.Full:
+                    pass
             if self.config.jitter_delay:
                 time.sleep(self.config.jitter_delay / 1000.0)
 
