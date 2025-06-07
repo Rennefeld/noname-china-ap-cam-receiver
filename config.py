@@ -12,8 +12,8 @@ class StreamConfig:
     client_video_port: int = 53310
     client_audio_port: int = 53311
     # Allow buffering of up to 8MB per frame by default to handle high bitrate
-    # video streams. Header bytes are set to 24 according to the camera protocol
-    # and keepalive is disabled initially.
+    # video streams. The first 3 bytes of each packet hold the sequence number
+    # and bytes 3-4 contain a CRC16 checksum for the payload.
     frame_buffer_size: int = 8 * 1024 * 1024
     header_bytes: int = 24
     jitter_delay: int = 0
