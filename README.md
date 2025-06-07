@@ -7,9 +7,13 @@ Open the settings dialog via the **Settings** menu to adjust connection
 options. Changes are persisted to `config.json`.
 The preview canvas keeps a 1:1 aspect ratio and shows a message if the stream
 is not running.
-The config also allows setting **Packets per Frame** which controls how many
-network packets are collected before a JPEG frame is processed. Frames are
-automatically aligned to reduce visible jitter between packets.
+The config also allows setting **frame dimensions** and **rows per chunk**.
+`rows_per_chunk` is used to calculate the UDP `chunk_size` so that each packet
+contains an exact number of image rows. The previously used **Packets per
+Frame** setting now reflects how many unique chunks were received for the last
+frame.
+An additional slider on the main window sets the **Alignment Threshold** for
+checking horizontal drift between frames.
 Run with:
 ```bash
 pip install -r requirements.txt
