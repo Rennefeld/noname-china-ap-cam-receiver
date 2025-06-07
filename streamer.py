@@ -4,7 +4,7 @@ import time
 import io
 import binascii
 import queue
-from typing import Optional
+from typing import Callable, Optional
 from assembler import ChunkedFrameBuffer
 from PIL import Image, ImageOps, UnidentifiedImageError, ImageFile
 

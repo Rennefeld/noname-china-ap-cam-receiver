@@ -1,5 +1,10 @@
 # noname-china-ap-cam-receiver
 
+![image](https://github.com/user-attachments/assets/a5ab85a1-102d-4f0f-a91e-450537760f3d)
+![image](https://github.com/user-attachments/assets/e0b32b87-d101-4292-b5d3-7774b4c4668e)
+![image](https://github.com/user-attachments/assets/ab484e62-75b2-4369-8a6d-e5ad57c945eb)
+
+
 Simple GUI application to receive MJPEG streams from the noname AP camera.
 The app allows configuring connection parameters and manipulating the video in
 real time. It supports recording, snapshots and basic image transformations.
@@ -19,6 +24,7 @@ Each chunk now carries a CRC16 checksum in the header. Damaged chunks are
 discarded and a small NACK message is sent to request a resend. Incoming frames
 are buffered in a double queue so that GUI updates never clash with the
 receiver thread.
+
 Run with:
 ```bash
 pip install -r requirements.txt
