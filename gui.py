@@ -1,0 +1,212 @@
+import os
+import time
+import tkinter as tk
+from tkinter import ttk, messagebox
+from PIL import Image, ImageTk
+import cv2
+import numpy as np
+from config import StreamConfig
+from streamer import FrameProcessor, CameraStreamer
+
+OUTPUT_DIR = "recordings"
+
+
+def ensure_output_dir():
+    if not os.path.isdir(OUTPUT_DIR):
+        os.makedirs(OUTPUT_DIR)
+
+
+class CameraApp:
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("AP Camera Receiver")
+        self.config = StreamConfig()
+        self.processor = FrameProcessor()
+        self.streamer = CameraStreamer(self.config, self.processor)
+
+        self.mic_on = False
+        self.recording = False
+        self.current_frame = None
+        self.tk_image = None
+        self.video_writer = None
+        self.volume = tk.DoubleVar(value=50)
+
+        self._build_ui()
+        self._show_off_message()
+
+    # ----------------- UI SETUP -----------------
+    def _build_ui(self):
+        cfg = ttk.LabelFrame(self.root, text="Config")
+        cfg.pack(fill="x", padx=5, pady=5)
+
+        self.cam_ip_var = tk.StringVar(value=self.config.cam_ip)
+        self.cam_video_port_var = tk.IntVar(value=self.config.cam_video_port)
+        self.cam_audio_port_var = tk.IntVar(value=self.config.cam_audio_port)
+        self.client_video_port_var = tk.IntVar(value=self.config.client_video_port)
+        self.client_audio_port_var = tk.IntVar(value=self.config.client_audio_port)
+        self.buffer_size_var = tk.IntVar(value=self.config.frame_buffer_size)
+        self.header_bytes_var = tk.IntVar(value=self.config.header_bytes)
+        self.jitter_var = tk.IntVar(value=self.config.jitter_delay)
+
+        row = 0
+        for text, var in (
+            ("Camera IP", self.cam_ip_var),
+            ("Cam Video Port", self.cam_video_port_var),
+            ("Cam Audio Port", self.cam_audio_port_var),
+            ("Client Video Port", self.client_video_port_var),
+            ("Client Audio Port", self.client_audio_port_var),
+            ("Frame Buffer", self.buffer_size_var),
+            ("Header Bytes", self.header_bytes_var),
+            ("Jitter Delay", self.jitter_var),
+        ):
+            ttk.Label(cfg, text=text).grid(row=row, column=0, sticky="w")
+            ttk.Entry(cfg, textvariable=var, width=15).grid(row=row, column=1, padx=5, pady=2)
+            row += 1
+
+        self.canvas = tk.Canvas(self.root, bg="black")
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Configure>", lambda e: self._display_current_frame())
+
+        controls = ttk.Frame(self.root)
+        controls.pack(fill="x", pady=5)
+
+        self.stream_btn = ttk.Button(controls, text="Start Stream", command=self.toggle_stream)
+        self.stream_btn.grid(row=0, column=0, padx=5)
+
+        self.mic_btn = ttk.Button(controls, text="Mic Off", command=self.toggle_mic)
+        self.mic_btn.grid(row=0, column=1, padx=5)
+
+        self.flip_h_btn = ttk.Button(controls, text="Flip H", command=self.toggle_flip_h)
+        self.flip_h_btn.grid(row=0, column=2, padx=5)
+
+        self.flip_v_btn = ttk.Button(controls, text="Flip V", command=self.toggle_flip_v)
+        self.flip_v_btn.grid(row=0, column=3, padx=5)
+
+        self.rotate_btn = ttk.Button(controls, text="Rotate 90°", command=self.toggle_rotate)
+        self.rotate_btn.grid(row=0, column=4, padx=5)
+
+        self.bw_btn = ttk.Button(controls, text="B/W", command=self.toggle_bw)
+        self.bw_btn.grid(row=0, column=5, padx=5)
+
+        self.record_btn = ttk.Button(controls, text="Record", state="disabled", command=self.toggle_record)
+        self.record_btn.grid(row=0, column=6, padx=5)
+
+        self.snapshot_btn = ttk.Button(controls, text="Snapshot", command=self.take_snapshot)
+        self.snapshot_btn.grid(row=0, column=7, padx=5)
+
+        ttk.Label(controls, text="Volume").grid(row=0, column=8, padx=5)
+        self.volume_slider = ttk.Scale(controls, from_=0, to=100, variable=self.volume,
+                                        command=self.on_volume_change)
+        self.volume_slider.grid(row=0, column=9, padx=5)
+
+    # ----------------- STREAM CONTROL -----------------
+    def toggle_stream(self):
+        if not self.streamer.running:
+            self._apply_config()
+            self.streamer.start(self._on_frame)
+            self.stream_btn.config(text="Stop Stream")
+            self.record_btn.config(state="normal")
+        else:
+            if self.recording:
+                self.toggle_record()
+            self.streamer.stop()
+            self.stream_btn.config(text="Start Stream")
+            self.record_btn.config(state="disabled")
+            self.current_frame = None
+            self._show_off_message()
+
+    def _apply_config(self):
+        self.config.cam_ip = self.cam_ip_var.get()
+        self.config.cam_video_port = int(self.cam_video_port_var.get())
+        self.config.cam_audio_port = int(self.cam_audio_port_var.get())
+        self.config.client_video_port = int(self.client_video_port_var.get())
+        self.config.client_audio_port = int(self.client_audio_port_var.get())
+        self.config.frame_buffer_size = int(self.buffer_size_var.get())
+        self.config.header_bytes = int(self.header_bytes_var.get())
+        self.config.jitter_delay = int(self.jitter_var.get())
+
+    # ----------------- FRAME HANDLING -----------------
+    def _on_frame(self, img):
+        self.current_frame = img
+        if self.recording and self.video_writer:
+            frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            self.video_writer.write(frame)
+        self._display_current_frame()
+
+    def _display_current_frame(self):
+        self.canvas.delete("all")
+        if self.current_frame is None:
+            self._show_off_message()
+            return
+        w = self.canvas.winfo_width()
+        h = self.canvas.winfo_height()
+        img = self.current_frame.resize((w, h), Image.LANCZOS)
+        self.tk_image = ImageTk.PhotoImage(img)
+        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_image)
+
+    def _show_off_message(self):
+        self.canvas.delete("all")
+        self.canvas.create_text(
+            self.canvas.winfo_reqwidth() // 2,
+            self.canvas.winfo_reqheight() // 2,
+            text="Stream is off",
+            fill="white",
+            font=("Arial", 20),
+        )
+
+    # ----------------- BUTTON CALLBACKS -----------------
+    def toggle_mic(self):
+        self.mic_on = not self.mic_on
+        self.mic_btn.config(text="Mic On" if self.mic_on else "Mic Off")
+
+    def toggle_flip_h(self):
+        self.processor.flip_h = not self.processor.flip_h
+
+    def toggle_flip_v(self):
+        self.processor.flip_v = not self.processor.flip_v
+
+    def toggle_rotate(self):
+        self.processor.rotate_90 = not self.processor.rotate_90
+
+    def toggle_bw(self):
+        self.processor.grayscale = not self.processor.grayscale
+
+    def toggle_record(self):
+        if not self.recording:
+            self._start_record()
+        else:
+            self._stop_record()
+
+    def _start_record(self):
+        ensure_output_dir()
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(OUTPUT_DIR, f"record_{timestamp}.avi")
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        w = int(self.canvas.winfo_width()) or 640
+        h = int(self.canvas.winfo_height()) or 480
+        self.video_writer = cv2.VideoWriter(path, fourcc, 20, (w, h))
+        self.record_file = path
+        self.recording = True
+        self.record_btn.config(text="Stop Recording")
+
+    def _stop_record(self):
+        self.recording = False
+        self.record_btn.config(text="Record")
+        if self.video_writer:
+            self.video_writer.release()
+            self.video_writer = None
+            messagebox.showinfo("Recording", f"Saved to {self.record_file}")
+
+    def take_snapshot(self):
+        if self.current_frame is None:
+            return
+        ensure_output_dir()
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(OUTPUT_DIR, f"snapshot_{timestamp}.jpg")
+        self.current_frame.save(path)
+        messagebox.showinfo("Snapshot", f"Saved to {path}")
+
+    def on_volume_change(self, _=None):
+        # Placeholder for real volume control
+        pass
+
