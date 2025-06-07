@@ -281,6 +281,9 @@ class CameraApp:
         # Placeholder for real volume control
         pass
 
+    def on_align_change(self, _=None):
+        self.config.alignment_threshold = int(float(self.align_threshold.get()))
+
     def open_config_dialog(self) -> None:
         ConfigDialog(self.root, self.config, on_save=self._on_config_saved)
 
@@ -291,3 +294,4 @@ class CameraApp:
         self.streamer = CameraStreamer(self.config, self.processor)
         if was_running:
             self.streamer.start(self._on_frame)
+        self.align_threshold.set(self.config.alignment_threshold)

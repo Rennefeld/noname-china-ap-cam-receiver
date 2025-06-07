@@ -31,6 +31,7 @@ class ConfigDialog(tk.Toplevel):
             ("Jitter Delay", "jitter_delay"),
             ("Packets per Frame", "packets_per_frame"),
             ("Keepalive Interval", "keepalive_interval"),
+            ("Alignment Threshold", "alignment_threshold"),
         ]
 
         frame = ttk.Frame(self)
