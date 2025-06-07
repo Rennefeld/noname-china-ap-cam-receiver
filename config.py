@@ -19,6 +19,7 @@ class StreamConfig:
     jitter_delay: int = 0
     packets_per_frame: int = 1
     keepalive_interval: float = 0.0
+    alignment_threshold: int = 20
 
     def save(self, path: str = CONFIG_PATH) -> None:
         with open(path, "w", encoding="utf-8") as fh:
