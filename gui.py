@@ -30,6 +30,8 @@ class CameraApp:
         self.current_frame = None
         self.tk_image = None
         self.video_writer = None
+        self.record_indicator_state = False
+        self.blink_job = None
         self.volume = tk.DoubleVar(value=50)
 
         self._build_ui()
@@ -69,7 +71,7 @@ class CameraApp:
         self.record_btn = ttk.Button(controls, text="Record", state="disabled", command=self.toggle_record)
         self.record_btn.grid(row=0, column=6, padx=5)
 
-        self.snapshot_btn = ttk.Button(controls, text="Snapshot", command=self.take_snapshot)
+        self.snapshot_btn = ttk.Button(controls, text="\U0001f4f7", command=self.take_snapshot)
         self.snapshot_btn.grid(row=0, column=7, padx=5)
 
         ttk.Label(controls, text="Volume").grid(row=0, column=8, padx=5)
@@ -116,6 +118,8 @@ class CameraApp:
         y = (canvas_h - new_h) // 2
         self.tk_image = ImageTk.PhotoImage(img)
         self.canvas.create_image(x, y, anchor=tk.NW, image=self.tk_image)
+        if self.recording and self.record_indicator_state:
+            self.canvas.create_oval(10, 10, 30, 30, fill="red", tags="record_indicator")
 
     def _show_off_message(self):
         self.canvas.delete("all")
@@ -155,22 +159,35 @@ class CameraApp:
     def _start_record(self):
         ensure_output_dir()
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(OUTPUT_DIR, f"record_{timestamp}.avi")
-        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        path = os.path.join(OUTPUT_DIR, f"record_{timestamp}.mpg")
+        fourcc = cv2.VideoWriter_fourcc(*"PIM1")
         w = int(self.canvas.winfo_width()) or 640
         h = int(self.canvas.winfo_height()) or 480
         self.video_writer = cv2.VideoWriter(path, fourcc, 20, (w, h))
         self.record_file = path
         self.recording = True
         self.record_btn.config(text="Stop Recording")
+        self._blink_record_indicator()
 
     def _stop_record(self):
         self.recording = False
         self.record_btn.config(text="Record")
+        if self.blink_job:
+            self.root.after_cancel(self.blink_job)
+            self.blink_job = None
+        self.canvas.delete("record_indicator")
         if self.video_writer:
             self.video_writer.release()
             self.video_writer = None
             messagebox.showinfo("Recording", f"Saved to {self.record_file}")
+
+    def _blink_record_indicator(self):
+        if not self.recording:
+            self.canvas.delete("record_indicator")
+            return
+        self.record_indicator_state = not self.record_indicator_state
+        self._display_current_frame()
+        self.blink_job = self.root.after(500, self._blink_record_indicator)
 
     def take_snapshot(self):
         if self.current_frame is None:

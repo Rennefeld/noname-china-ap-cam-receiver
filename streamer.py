@@ -71,11 +71,12 @@ class CameraStreamer:
         payload_8080 = b"Bv"
         while self.running:
             try:
-                self.sock.sendto(payload_8070, (self.config.cam_ip, self.config.cam_audio_port))
-                self.sock.sendto(payload_8080, (self.config.cam_ip, self.config.cam_video_port))
+                if self.sock:
+                    self.sock.sendto(payload_8070, (self.config.cam_ip, self.config.cam_audio_port))
+                    self.sock.sendto(payload_8080, (self.config.cam_ip, self.config.cam_video_port))
             except Exception:
                 pass
-            time.sleep(5)
+            time.sleep(self.config.keepalive_interval)
 
     def _recv_frames(self):
         while self.running:
@@ -111,4 +112,6 @@ class CameraStreamer:
                     continue
                 if self.frame_callback:
                     self.frame_callback(img)
+                if self.config.jitter_delay:
+                    time.sleep(self.config.jitter_delay / 1000.0)
 
