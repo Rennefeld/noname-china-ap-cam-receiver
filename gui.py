@@ -163,11 +163,18 @@ class CameraApp:
     def _start_record(self):
         ensure_output_dir()
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(OUTPUT_DIR, f"record_{timestamp}.mpg")
-        fourcc = cv2.VideoWriter_fourcc(*"PIM1")
-        w = int(self.canvas.winfo_width()) or 640
-        h = int(self.canvas.winfo_height()) or 480
-        self.video_writer = cv2.VideoWriter(path, fourcc, 20, (w, h))
+        path = os.path.join(OUTPUT_DIR, f"record_{timestamp}.avi")
+        fourcc = cv2.VideoWriter_fourcc(*"XVID")
+        if self.current_frame is not None:
+            w, h = self.current_frame.size
+        else:
+            w = int(self.canvas.winfo_width()) or 640
+            h = int(self.canvas.winfo_height()) or 480
+        self.video_writer = cv2.VideoWriter(path, fourcc, 20.0, (w, h))
+        if not self.video_writer.isOpened():
+            messagebox.showerror("Recording", "Failed to open video writer")
+            self.video_writer = None
+            return
         self.record_file = path
         self.recording = True
         self.record_btn.config(text="Stop Recording")
