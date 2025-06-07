@@ -29,12 +29,13 @@ class ConfigDialog(tk.Toplevel):
             ("Frame Buffer", "frame_buffer_size"),
             ("Header Bytes", "header_bytes"),
             ("Jitter Delay", "jitter_delay"),
+            ("Keepalive Interval", "keepalive_interval"),
         ]
 
         frame = ttk.Frame(self)
         frame.pack(padx=10, pady=10)
 
-        buffer_values = [2 ** i for i in range(10, 17)]
+        buffer_values = [2 ** i for i in range(10, 31)]
 
         for i, (label, field) in enumerate(fields):
             ttk.Label(frame, text=label).grid(row=i, column=0, sticky="w")
@@ -98,7 +99,7 @@ class ConfigDialog(tk.Toplevel):
                 scale = self._vars.get(field + "_scale")
                 if label and scale:
                     label.set(str(getattr(defaults, field)))
-                    buffer_values = [2 ** i for i in range(10, 17)]
+                    buffer_values = [2 ** i for i in range(10, 31)]
                     idx = buffer_values.index(getattr(defaults, field))
                     scale.set(idx)
 
