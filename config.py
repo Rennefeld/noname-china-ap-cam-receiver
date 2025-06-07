@@ -19,7 +19,6 @@ class StreamConfig:
     jitter_delay: int = 0
     packets_per_frame: int = 1
     keepalive_interval: float = 0.0
-    alignment_threshold: int = 20
     frame_width: int = 640
     frame_height: int = 480
     channels: int = 3

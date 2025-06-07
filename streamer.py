@@ -139,8 +139,9 @@ class CameraStreamer:
             if binascii.crc_hqx(payload, 0xFFFF) != crc_recv:
                 self._send_nack(seq)
                 continue
+            is_new = seq not in self._frame_buffer.received
             complete = self._frame_buffer.add(seq, payload)
-            if seq not in self._frame_buffer.received:
+            if is_new:
                 self.current_packet_count += 1
             if not complete:
                 continue
@@ -156,6 +157,38 @@ class CameraStreamer:
             if self.config.jitter_delay:
                 time.sleep(self.config.jitter_delay / 1000.0)
             self._frame_buffer.reset()
+
+
+def start_dummy_camera(config: StreamConfig, frame: Image.Image, count: int = 1) -> threading.Thread:
+    """Send `count` frames to the client using the same packet format as the real camera."""
+
+    def _run() -> None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # send from the configured camera port
+        try:
+            sock.bind((config.cam_ip, config.cam_video_port))
+        except Exception:
+            sock.bind((config.cam_ip, 0))
+        payload = np.array(frame, dtype=np.uint8).tobytes()
+        for _ in range(count):
+            for seq in range(config.num_chunks):
+                start = seq * config.chunk_size
+                end = start + config.chunk_size
+                chunk = payload[start:end]
+                crc = binascii.crc_hqx(chunk, 0xFFFF)
+                pkt = (
+                    seq.to_bytes(3, "big")
+                    + crc.to_bytes(2, "big")
+                    + bytes(config.header_bytes - 5)
+                    + chunk
+                )
+                sock.sendto(pkt, ("127.0.0.1", config.client_video_port))
+            time.sleep(0.05)
+        sock.close()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return t
 
     def _extract_frames(self) -> None:
         """Parse buffered JPEG data into frames and dispatch them."""
