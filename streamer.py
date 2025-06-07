@@ -3,6 +3,7 @@ import threading
 import time
 import io
 from typing import Callable, Optional
+from assembler import ChunkedFrameBuffer
 from PIL import Image, ImageOps, UnidentifiedImageError, ImageFile
 
 # Allow loading frames even if the JPEG data is slightly truncated.
@@ -43,7 +44,13 @@ class CameraStreamer:
         self.current_packet_count = 0
         self.last_packet_count = 0
         self.frame_callback: Optional[Callable[[Image.Image], None]] = None
-        self._recv_buffer = bytearray(self.config.frame_buffer_size)
+        self._recv_buffer = bytearray(self.config.chunk_size + self.config.header_bytes)
+        self._frame_buffer = ChunkedFrameBuffer(
+            self.config.frame_width,
+            self.config.frame_height,
+            self.config.channels,
+            self.config.rows_per_chunk,
+        )
 
     def packets_in_frame(self) -> int:
         """Return number of packets used to assemble the last frame."""
@@ -85,6 +92,7 @@ class CameraStreamer:
         self.last_frame_time = 0.0
         self.current_packet_count = 0
         self.last_packet_count = 0
+        self._frame_buffer.reset()
 
     def _send_keepalive(self):
         payload_8070 = b"0f"
@@ -100,6 +108,7 @@ class CameraStreamer:
 
     def _recv_frames(self):
         buffer = memoryview(self._recv_buffer)
+        header = self.config.header_bytes
         while self.running:
             try:
                 nbytes, addr = self.sock.recvfrom_into(buffer)
@@ -107,13 +116,24 @@ class CameraStreamer:
                 break
             if addr[0] != self.config.cam_ip:
                 continue
-            self.jpeg_buffer.extend(buffer[:nbytes])
-            self.current_packet_count += 1
-            if self.current_packet_count < self.config.packets_per_frame:
+            if nbytes <= header:
+                continue
+            seq = int.from_bytes(buffer[:3], "big")
+            payload = buffer[header:nbytes].tobytes()
+            complete = self._frame_buffer.add(seq, payload)
+            if seq not in self._frame_buffer.received:
+                self.current_packet_count += 1
+            if not complete:
                 continue
             self.last_packet_count = self.current_packet_count
             self.current_packet_count = 0
-            self._extract_frames()
+            img = self._frame_buffer.to_image()
+            img = self.processor.process(img)
+            if self.frame_callback:
+                self.frame_callback(img)
+            if self.config.jitter_delay:
+                time.sleep(self.config.jitter_delay / 1000.0)
+            self._frame_buffer.reset()
 
     def _extract_frames(self) -> None:
         """Parse buffered JPEG data into frames and dispatch them."""
