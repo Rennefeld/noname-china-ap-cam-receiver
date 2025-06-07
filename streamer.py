@@ -35,7 +35,6 @@ class CameraStreamer:
         self.processor = processor
         self.running = False
         self.sock: Optional[socket.socket] = None
-        self.keepalive_sock: Optional[socket.socket] = None
         self.keepalive_thread: Optional[threading.Thread] = None
         self.receiver_thread: Optional[threading.Thread] = None
         self.jpeg_buffer = bytearray()
@@ -47,7 +46,6 @@ class CameraStreamer:
             return
         self.frame_callback = callback
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.keepalive_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             self.sock.bind(("", self.config.client_video_port))
         except Exception:
@@ -65,11 +63,6 @@ class CameraStreamer:
                 self.sock.close()
             finally:
                 self.sock = None
-        if self.keepalive_sock:
-            try:
-                self.keepalive_sock.close()
-            finally:
-                self.keepalive_sock = None
         self.jpeg_buffer.clear()
         self.last_frame_time = 0.0
 
@@ -78,8 +71,9 @@ class CameraStreamer:
         payload_8080 = b"Bv"
         while self.running:
             try:
-                self.keepalive_sock.sendto(payload_8070, (self.config.cam_ip, self.config.cam_audio_port))
-                self.keepalive_sock.sendto(payload_8080, (self.config.cam_ip, self.config.cam_video_port))
+                if self.sock:
+                    self.sock.sendto(payload_8070, (self.config.cam_ip, self.config.cam_audio_port))
+                    self.sock.sendto(payload_8080, (self.config.cam_ip, self.config.cam_video_port))
             except Exception:
                 pass
             time.sleep(self.config.keepalive_interval)
@@ -118,4 +112,6 @@ class CameraStreamer:
                     continue
                 if self.frame_callback:
                     self.frame_callback(img)
+                if self.config.jitter_delay:
+                    time.sleep(self.config.jitter_delay / 1000.0)
 
