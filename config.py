@@ -20,6 +20,28 @@ class StreamConfig:
     packets_per_frame: int = 1
     keepalive_interval: float = 0.0
     alignment_threshold: int = 20
+    frame_width: int = 640
+    frame_height: int = 480
+    channels: int = 3
+    rows_per_chunk: int = 24
+
+    @property
+    def row_bytes(self) -> int:
+        return self.frame_width * self.channels
+
+    @property
+    def chunk_size(self) -> int:
+        return self.row_bytes * self.rows_per_chunk
+
+    @property
+    def frame_size(self) -> int:
+        return self.row_bytes * self.frame_height
+
+    @property
+    def num_chunks(self) -> int:
+        if self.chunk_size == 0:
+            return 0
+        return self.frame_size // self.chunk_size
 
     def save(self, path: str = CONFIG_PATH) -> None:
         with open(path, "w", encoding="utf-8") as fh:
