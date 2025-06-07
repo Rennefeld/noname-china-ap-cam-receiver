@@ -62,6 +62,9 @@ class CameraStreamer:
         self.receiver_thread = threading.Thread(target=self._recv_frames, daemon=True)
         self.keepalive_thread.start()
         self.receiver_thread.start()
+        # reset counters for consistent behaviour after restarts
+        self.current_packet_count = 0
+        self.last_packet_count = 0
 
     def stop(self):
         self.running = False
@@ -77,6 +80,8 @@ class CameraStreamer:
                 self.keepalive_sock = None
         self.jpeg_buffer.clear()
         self.last_frame_time = 0.0
+        self.current_packet_count = 0
+        self.last_packet_count = 0
 
     def _send_keepalive(self):
         payload_8070 = b"0f"
