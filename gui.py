@@ -105,17 +105,22 @@ class CameraApp:
         if self.current_frame is None:
             self._show_off_message()
             return
-        w = self.canvas.winfo_width()
-        h = self.canvas.winfo_height()
-        img = self.current_frame.resize((w, h), Image.LANCZOS)
+        canvas_w = self.canvas.winfo_width()
+        canvas_h = self.canvas.winfo_height()
+        side = min(canvas_w, canvas_h)
+        img = self.current_frame.resize((side, side), Image.LANCZOS)
+        x = (canvas_w - side) // 2
+        y = (canvas_h - side) // 2
         self.tk_image = ImageTk.PhotoImage(img)
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_image)
+        self.canvas.create_image(x, y, anchor=tk.NW, image=self.tk_image)
 
     def _show_off_message(self):
         self.canvas.delete("all")
+        canvas_w = self.canvas.winfo_width()
+        canvas_h = self.canvas.winfo_height()
         self.canvas.create_text(
-            self.canvas.winfo_reqwidth() // 2,
-            self.canvas.winfo_reqheight() // 2,
+            canvas_w // 2,
+            canvas_h // 2,
             text="Stream is off",
             fill="white",
             font=("Arial", 20),
