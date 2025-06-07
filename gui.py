@@ -1,5 +1,7 @@
 import os
 import time
+import subprocess
+import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
@@ -15,6 +17,23 @@ OUTPUT_DIR = "recordings"
 def ensure_output_dir():
     if not os.path.isdir(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
+
+
+def convert_to_mpg(path: str) -> str:
+    """Convert an AVI recording to MPG using ffmpeg."""
+    if shutil.which("ffmpeg") is None:
+        return path
+    base = os.path.splitext(path)[0]
+    mpg_path = f"{base}.mpg"
+    cmd = ["ffmpeg", "-y", "-i", path, mpg_path]
+    try:
+        subprocess.run(
+            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        os.remove(path)
+        return mpg_path
+    except Exception:
+        return path
 
 
 class CameraApp:
@@ -50,33 +69,50 @@ class CameraApp:
         controls = ttk.Frame(self.root)
         controls.pack(fill="x", pady=5)
 
-        self.stream_btn = ttk.Button(controls, text="Start Stream", command=self.toggle_stream)
+        self.stream_btn = ttk.Button(
+            controls, text="Start Stream", command=self.toggle_stream
+        )
         self.stream_btn.grid(row=0, column=0, padx=5)
 
         self.mic_btn = ttk.Button(controls, text="Mic Off", command=self.toggle_mic)
         self.mic_btn.grid(row=0, column=1, padx=5)
 
-        self.flip_h_btn = ttk.Button(controls, text="Flip H", command=self.toggle_flip_h)
+        self.flip_h_btn = ttk.Button(
+            controls, text="Flip H", command=self.toggle_flip_h
+        )
         self.flip_h_btn.grid(row=0, column=2, padx=5)
 
-        self.flip_v_btn = ttk.Button(controls, text="Flip V", command=self.toggle_flip_v)
+        self.flip_v_btn = ttk.Button(
+            controls, text="Flip V", command=self.toggle_flip_v
+        )
         self.flip_v_btn.grid(row=0, column=3, padx=5)
 
-        self.rotate_btn = ttk.Button(controls, text="Rotate 90°", command=self.toggle_rotate)
+        self.rotate_btn = ttk.Button(
+            controls, text="Rotate 90°", command=self.toggle_rotate
+        )
         self.rotate_btn.grid(row=0, column=4, padx=5)
 
         self.bw_btn = ttk.Button(controls, text="B/W", command=self.toggle_bw)
         self.bw_btn.grid(row=0, column=5, padx=5)
 
-        self.record_btn = ttk.Button(controls, text="Record", state="disabled", command=self.toggle_record)
+        self.record_btn = ttk.Button(
+            controls, text="Record", state="disabled", command=self.toggle_record
+        )
         self.record_btn.grid(row=0, column=6, padx=5)
 
-        self.snapshot_btn = ttk.Button(controls, text="\U0001f4f7", command=self.take_snapshot)
+        self.snapshot_btn = ttk.Button(
+            controls, text="\U0001f4f7", command=self.take_snapshot
+        )
         self.snapshot_btn.grid(row=0, column=7, padx=5)
 
         ttk.Label(controls, text="Volume").grid(row=0, column=8, padx=5)
-        self.volume_slider = ttk.Scale(controls, from_=0, to=100, variable=self.volume,
-                                        command=self.on_volume_change)
+        self.volume_slider = ttk.Scale(
+            controls,
+            from_=0,
+            to=100,
+            variable=self.volume,
+            command=self.on_volume_change,
+        )
         self.volume_slider.grid(row=0, column=9, padx=5)
 
         self.packets_label = ttk.Label(controls, text="Pkts: 0")
@@ -170,7 +206,7 @@ class CameraApp:
         else:
             w = int(self.canvas.winfo_width()) or 640
             h = int(self.canvas.winfo_height()) or 480
-        self.video_writer = cv2.VideoWriter(path, fourcc, 20.0, (w, h))
+        self.video_writer = cv2.VideoWriter(path, fourcc, 60.0, (w, h))
         if not self.video_writer.isOpened():
             messagebox.showerror("Recording", "Failed to open video writer")
             self.video_writer = None
@@ -190,7 +226,8 @@ class CameraApp:
         if self.video_writer:
             self.video_writer.release()
             self.video_writer = None
-            messagebox.showinfo("Recording", f"Saved to {self.record_file}")
+            final_path = convert_to_mpg(self.record_file)
+            messagebox.showinfo("Recording", f"Saved to {final_path}")
 
     def _blink_record_indicator(self):
         if not self.recording:
@@ -223,4 +260,3 @@ class CameraApp:
         self.streamer = CameraStreamer(self.config, self.processor)
         if was_running:
             self.streamer.start(self._on_frame)
-
