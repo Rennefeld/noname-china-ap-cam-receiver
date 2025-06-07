@@ -4,6 +4,7 @@ import subprocess
 import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox
+import queue
 from PIL import Image, ImageTk
 import cv2
 import numpy as np
@@ -43,6 +44,7 @@ class CameraApp:
         self.config = StreamConfig.load()
         self.processor = FrameProcessor()
         self.streamer = CameraStreamer(self.config, self.processor)
+        self.frame_queue: queue.Queue = queue.Queue(maxsize=2)
 
         self.mic_on = False
         self.recording = False
@@ -56,6 +58,7 @@ class CameraApp:
 
         self._build_ui()
         self._show_off_message()
+        self.root.after(10, self._poll_queue)
 
     # ----------------- UI SETUP -----------------
     def _build_ui(self):
@@ -125,20 +128,22 @@ class CameraApp:
     # ----------------- STREAM CONTROL -----------------
     def toggle_stream(self):
         if not self.streamer.running:
-            self.streamer.start(self._on_frame)
+            self.streamer.start(self.frame_queue)
             self.stream_btn.config(text="Stop Stream")
             self.record_btn.config(state="normal")
         else:
             if self.recording:
                 self.toggle_record()
             self.streamer.stop()
+            with self.frame_queue.mutex:
+                self.frame_queue.queue.clear()
             self.stream_btn.config(text="Start Stream")
             self.record_btn.config(state="disabled")
             self.current_frame = None
             self._show_off_message()
 
     # ----------------- FRAME HANDLING -----------------
-    def _on_frame(self, img):
+    def _handle_frame(self, img):
         self.packets_label.config(text=f"Pkts: {self.streamer.packets_in_frame()}")
         aligned, offset = self._align_frame(self.prev_frame, img)
         self.prev_frame = aligned.copy()
@@ -148,6 +153,15 @@ class CameraApp:
             frame = cv2.cvtColor(np.array(aligned), cv2.COLOR_RGB2BGR)
             self.video_writer.write(frame)
         self._display_current_frame()
+
+    def _poll_queue(self):
+        try:
+            img = self.frame_queue.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            self._handle_frame(img)
+        self.root.after(10, self._poll_queue)
 
     def _display_current_frame(self):
         self.canvas.delete("all")
@@ -293,5 +307,5 @@ class CameraApp:
             self.streamer.stop()
         self.streamer = CameraStreamer(self.config, self.processor)
         if was_running:
-            self.streamer.start(self._on_frame)
+            self.streamer.start(self.frame_queue)
         self.align_threshold.set(self.config.alignment_threshold)
