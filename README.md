@@ -19,8 +19,7 @@ Frame** setting now reflects how many unique chunks were received for the last
 frame.
 An additional slider on the main window sets the **Alignment Threshold** for
 checking horizontal drift between frames.
-
-## Reliability improvements
+\n## Reliability improvements
 Each chunk now carries a CRC16 checksum in the header. Damaged chunks are
 discarded and a small NACK message is sent to request a resend. Incoming frames
 are buffered in a double queue so that GUI updates never clash with the

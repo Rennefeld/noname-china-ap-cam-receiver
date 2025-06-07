@@ -307,11 +307,5 @@ class CameraApp:
             self.streamer.stop()
         self.streamer = CameraStreamer(self.config, self.processor)
         if was_running:
-            self.streamer.start(self._on_frame)
-        # Older configs might not have created the alignment threshold control
-        # yet. Create it lazily if missing so loading a corrupted config.json
-        # does not crash the UI.
-        if not hasattr(self, "align_threshold"):
-            self.align_threshold = tk.DoubleVar(value=self.config.alignment_threshold)
-        else:
-            self.align_threshold.set(self.config.alignment_threshold)
+            self.streamer.start(self.frame_queue)
+        self.align_threshold.set(self.config.alignment_threshold)
