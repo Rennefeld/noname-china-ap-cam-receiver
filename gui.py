@@ -206,7 +206,7 @@ class CameraApp:
         else:
             w = int(self.canvas.winfo_width()) or 640
             h = int(self.canvas.winfo_height()) or 480
-        self.video_writer = cv2.VideoWriter(path, fourcc, 60.0, (w, h))
+        self.video_writer = cv2.VideoWriter(path, fourcc, 20.0, (w, h))
         if not self.video_writer.isOpened():
             messagebox.showerror("Recording", "Failed to open video writer")
             self.video_writer = None
