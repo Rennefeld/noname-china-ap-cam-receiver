@@ -14,6 +14,7 @@ class StreamConfig:
     frame_buffer_size: int = 65536
     header_bytes: int = 0
     jitter_delay: int = 0
+    packets_per_frame: int = 1
     keepalive_interval: float = 2.0
 
     def save(self, path: str = CONFIG_PATH) -> None:

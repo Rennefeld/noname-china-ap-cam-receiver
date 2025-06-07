@@ -40,8 +40,13 @@ class CameraStreamer:
         self.receiver_thread: Optional[threading.Thread] = None
         self.jpeg_buffer = bytearray()
         self.last_frame_time = 0.0
+        self.current_packet_count = 0
+        self.last_packet_count = 0
         self.frame_callback: Optional[Callable[[Image.Image], None]] = None
 
+    def packets_in_frame(self) -> int:
+        """Return number of packets used to assemble the last frame."""
+        return self.last_packet_count
     def start(self, callback: Callable[[Image.Image], None]):
         if self.running:
             return
@@ -94,31 +99,40 @@ class CameraStreamer:
             if addr[0] != self.config.cam_ip:
                 continue
             self.jpeg_buffer += data
-            while True:
-                soi = self.jpeg_buffer.find(b"\xff\xd8")
-                if soi < 0:
-                    break
-                eoi = self.jpeg_buffer.find(b"\xff\xd9", soi + 2)
-                if eoi < 0:
-                    break
-                jpeg_data = self.jpeg_buffer[soi:eoi+2]
-                del self.jpeg_buffer[:eoi+2]
-                try:
-                    Image.open(io.BytesIO(jpeg_data)).verify()
-                except Exception:
-                    continue
-                now = time.monotonic()
-                if now - self.last_frame_time < 0.05:
-                    continue
-                self.last_frame_time = now
-                try:
-                    img = Image.open(io.BytesIO(jpeg_data))
-                    img.load()  # ensure data is read before processing
-                    img = self.processor.process(img)
-                except (UnidentifiedImageError, OSError):
-                    continue
-                if self.frame_callback:
-                    self.frame_callback(img)
-                if self.config.jitter_delay:
-                    time.sleep(self.config.jitter_delay / 1000.0)
+            self.current_packet_count += 1
+            if self.current_packet_count < self.config.packets_per_frame:
+                continue
+            self.last_packet_count = self.current_packet_count
+            self.current_packet_count = 0
+            self._extract_frames()
+
+    def _extract_frames(self) -> None:
+        """Parse buffered JPEG data into frames and dispatch them."""
+        while True:
+            soi = self.jpeg_buffer.find(b"\xff\xd8")
+            if soi < 0:
+                break
+            eoi = self.jpeg_buffer.find(b"\xff\xd9", soi + 2)
+            if eoi < 0:
+                break
+            jpeg_data = self.jpeg_buffer[soi:eoi + 2]
+            del self.jpeg_buffer[:eoi + 2]
+            try:
+                Image.open(io.BytesIO(jpeg_data)).verify()
+            except Exception:
+                continue
+            now = time.monotonic()
+            if now - self.last_frame_time < 0.05:
+                continue
+            self.last_frame_time = now
+            try:
+                img = Image.open(io.BytesIO(jpeg_data))
+                img.load()
+                img = self.processor.process(img)
+            except (UnidentifiedImageError, OSError):
+                continue
+            if self.frame_callback:
+                self.frame_callback(img)
+            if self.config.jitter_delay:
+                time.sleep(self.config.jitter_delay / 1000.0)
 
