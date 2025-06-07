@@ -29,7 +29,8 @@ class StreamConfig:
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
-            return cls(**data)
+            valid = {k: v for k, v in data.items() if k in cls.__annotations__}
+            return cls(**valid)
         return cls()
 
     def restore_defaults(self) -> None:
