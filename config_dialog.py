@@ -34,12 +34,39 @@ class ConfigDialog(tk.Toplevel):
         frame = ttk.Frame(self)
         frame.pack(padx=10, pady=10)
 
+        buffer_values = [2 ** i for i in range(10, 17)]
+
         for i, (label, field) in enumerate(fields):
             ttk.Label(frame, text=label).grid(row=i, column=0, sticky="w")
             value = getattr(self._config, field)
-            var = tk.StringVar(value=str(value))
-            self._vars[field] = var
-            ttk.Entry(frame, textvariable=var, width=15).grid(row=i, column=1, padx=5, pady=2)
+            if field == "frame_buffer_size":
+                idx = buffer_values.index(value) if value in buffer_values else 0
+                var = tk.IntVar(value=buffer_values[idx])
+                self._vars[field] = var
+                label_var = tk.StringVar(value=str(var.get()))
+
+                def update(val, v=var, l=label_var):
+                    choice = buffer_values[int(float(val))]
+                    v.set(choice)
+                    l.set(str(choice))
+
+                scale = tk.Scale(
+                    frame,
+                    from_=0,
+                    to=len(buffer_values) - 1,
+                    orient="horizontal",
+                    showvalue=False,
+                    command=update,
+                )
+                scale.set(idx)
+                scale.grid(row=i, column=1, padx=5, pady=2)
+                ttk.Label(frame, textvariable=label_var).grid(row=i, column=2, sticky="w")
+                self._vars[field + "_label"] = label_var
+                self._vars[field + "_scale"] = scale
+            else:
+                var = tk.StringVar(value=str(value))
+                self._vars[field] = var
+                ttk.Entry(frame, textvariable=var, width=15).grid(row=i, column=1, padx=5, pady=2)
 
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=len(fields), column=0, columnspan=2, pady=5)
@@ -50,6 +77,8 @@ class ConfigDialog(tk.Toplevel):
 
     def _save(self) -> None:
         for field, var in self._vars.items():
+            if field.endswith("_label") or field.endswith("_scale"):
+                continue
             current_value = getattr(self._config, field)
             cast_type = type(current_value)
             setattr(self._config, field, cast_type(var.get()))
@@ -61,6 +90,16 @@ class ConfigDialog(tk.Toplevel):
     def _restore_defaults(self) -> None:
         defaults = StreamConfig()
         for field, var in self._vars.items():
+            if field.endswith("_label") or field.endswith("_scale"):
+                continue
             var.set(str(getattr(defaults, field)))
+            if field == "frame_buffer_size":
+                label = self._vars.get(field + "_label")
+                scale = self._vars.get(field + "_scale")
+                if label and scale:
+                    label.set(str(getattr(defaults, field)))
+                    buffer_values = [2 ** i for i in range(10, 17)]
+                    idx = buffer_values.index(getattr(defaults, field))
+                    scale.set(idx)
 
 
