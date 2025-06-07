@@ -17,13 +17,28 @@ python main.py
 
 ## Packaging
 
-To create a standalone executable for Windows, install PyInstaller and run:
+### Windows executable
+Install [PyInstaller](https://pyinstaller.org) and build the single file binary:
 
 ```bash
 pip install pyinstaller
 pyinstaller --onefile main.py
 ```
 
-For an Android APK, the project can be packaged with [BeeWare](https://beeware.org/) or
-[Buildozer](https://github.com/kivy/buildozer). Set up the chosen toolchain and execute
-the build command on a machine with the required Android SDK/NDK installed.
+### Android APK with Buildozer
+Install the toolchain and dependencies (requires Linux):
+
+```bash
+sudo apt update
+sudo apt install -y build-essential git python3 python3-pip openjdk-17-jdk ffmpeg
+pip install buildozer
+```
+
+Initialize Buildozer and create the APK:
+
+```bash
+buildozer init  # creates buildozer.spec
+buildozer -v android debug
+```
+
+`ffmpeg` is needed so recordings can be automatically converted from AVI to MPG.
