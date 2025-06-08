@@ -43,3 +43,20 @@ buildozer -v android debug
 ```
 
 `ffmpeg` is needed so recordings can be automatically converted from AVI to MPG.
+
+## Test Environment
+
+A fake camera utility is provided to replay the captured network traffic from
+`docs/PCAPdroid_log.pcap`. This allows testing the receiver without the actual
+hardware. The tool requires root privileges because it replays raw packets with
+Scapy.
+
+Run the simulator:
+
+```bash
+pip install -r requirements.txt
+sudo python tests/fake_camera.py docs/PCAPdroid_log.pcap --iface eth0
+```
+
+Use `--client-ip`, `--camera-ip` and `--client-port` to override addresses from
+the capture if your network setup differs.
