@@ -26,6 +26,8 @@ class ConfigDialog(tk.Toplevel):
             ("Cam Audio Port", "cam_audio_port"),
             ("Client Video Port", "client_video_port"),
             ("Client Audio Port", "client_audio_port"),
+            ("Frame Width", "frame_width"),
+            ("Frame Height", "frame_height"),
             ("Frame Buffer", "frame_buffer_size"),
             ("Header Bytes", "header_bytes"),
             ("Jitter Delay", "jitter_delay"),

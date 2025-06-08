@@ -2,6 +2,7 @@ import os
 import time
 import subprocess
 import shutil
+import logging
 import tkinter as tk
 from tkinter import ttk, messagebox
 import queue
@@ -128,10 +129,13 @@ class CameraApp:
     # ----------------- STREAM CONTROL -----------------
     def toggle_stream(self):
         if not self.streamer.running:
+            logging.info("starting stream")
             self.streamer.start(self.frame_queue)
+            self.streamer.check_connection()
             self.stream_btn.config(text="Stop Stream")
             self.record_btn.config(state="normal")
         else:
+            logging.info("stopping stream")
             if self.recording:
                 self.toggle_record()
             self.streamer.stop()
@@ -144,6 +148,7 @@ class CameraApp:
 
     # ----------------- FRAME HANDLING -----------------
     def _handle_frame(self, img):
+        logging.debug("frame received")
         self.packets_label.config(text=f"Pkts: {self.streamer.packets_in_frame()}")
         aligned, offset = self._align_frame(self.prev_frame, img)
         self.prev_frame = aligned.copy()

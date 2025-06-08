@@ -3,15 +3,13 @@ import threading
 import time
 import io
 import binascii
+import logging
 import queue
 from typing import Callable, Optional
-from assembler import ChunkedFrameBuffer
 from PIL import Image, ImageOps, UnidentifiedImageError, ImageFile
 
 # Allow loading frames even if the JPEG data is slightly truncated.
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-import numpy as np
-import cv2
 from config import StreamConfig
 
 class FrameProcessor:
@@ -47,12 +45,6 @@ class CameraStreamer:
         self.last_packet_count = 0
         self.frame_queue: Optional[queue.Queue] = None
         self._recv_buffer = bytearray(self.config.chunk_size + self.config.header_bytes)
-        self._frame_buffer = ChunkedFrameBuffer(
-            self.config.frame_width,
-            self.config.frame_height,
-            self.config.channels,
-            self.config.rows_per_chunk,
-        )
 
     def packets_in_frame(self) -> int:
         """Return number of packets used to assemble the last frame."""
@@ -67,13 +59,20 @@ class CameraStreamer:
         self.keepalive_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.config.frame_buffer_size)
         try:
             self.sock.bind(("", self.config.client_video_port))
+            logging.debug("bound video socket to %s", self.sock.getsockname())
         except Exception:
             self.sock.bind(("", 0))
+            logging.warning(
+                "failed to bind to configured port %d, using %d",
+                self.config.client_video_port,
+                self.sock.getsockname()[1],
+            )
         self.running = True
         self.keepalive_thread = threading.Thread(target=self._send_keepalive, daemon=True)
         self.receiver_thread = threading.Thread(target=self._recv_frames, daemon=True)
         self.keepalive_thread.start()
         self.receiver_thread.start()
+        logging.debug("streamer started")
         # reset counters for consistent behaviour after restarts
         self.current_packet_count = 0
         self.last_packet_count = 0
@@ -94,8 +93,8 @@ class CameraStreamer:
         self.last_frame_time = 0.0
         self.current_packet_count = 0
         self.last_packet_count = 0
-        self._frame_buffer.reset()
         self.frame_queue = None
+        logging.debug("streamer stopped")
 
     def _send_keepalive(self):
         payload_8070 = b"0f"
@@ -106,7 +105,7 @@ class CameraStreamer:
                     self.sock.sendto(payload_8070, (self.config.cam_ip, self.config.cam_audio_port))
                     self.sock.sendto(payload_8080, (self.config.cam_ip, self.config.cam_video_port))
             except Exception:
-                pass
+                logging.exception("keepalive send failed")
             time.sleep(self.config.keepalive_interval)
 
     def _send_nack(self, seq: int) -> None:
@@ -119,7 +118,7 @@ class CameraStreamer:
                 msg, (self.config.cam_ip, self.config.cam_video_port)
             )
         except Exception:
-            pass
+            logging.exception("failed to send NACK")
 
     def _recv_frames(self):
         buffer = memoryview(self._recv_buffer)
@@ -139,56 +138,11 @@ class CameraStreamer:
             if binascii.crc_hqx(payload, 0xFFFF) != crc_recv:
                 self._send_nack(seq)
                 continue
-            is_new = seq not in self._frame_buffer.received
-            complete = self._frame_buffer.add(seq, payload)
-            if is_new:
-                self.current_packet_count += 1
-            if not complete:
-                continue
-            self.last_packet_count = self.current_packet_count
-            self.current_packet_count = 0
-            img = self._frame_buffer.to_image()
-            img = self.processor.process(img)
-            if self.frame_queue is not None:
-                try:
-                    self.frame_queue.put_nowait(img)
-                except queue.Full:
-                    pass
+            self.current_packet_count += 1
+            self.jpeg_buffer.extend(payload)
+            self._extract_frames()
             if self.config.jitter_delay:
                 time.sleep(self.config.jitter_delay / 1000.0)
-            self._frame_buffer.reset()
-
-
-def start_dummy_camera(config: StreamConfig, frame: Image.Image, count: int = 1) -> threading.Thread:
-    """Send `count` frames to the client using the same packet format as the real camera."""
-
-    def _run() -> None:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # send from the configured camera port
-        try:
-            sock.bind((config.cam_ip, config.cam_video_port))
-        except Exception:
-            sock.bind((config.cam_ip, 0))
-        payload = np.array(frame, dtype=np.uint8).tobytes()
-        for _ in range(count):
-            for seq in range(config.num_chunks):
-                start = seq * config.chunk_size
-                end = start + config.chunk_size
-                chunk = payload[start:end]
-                crc = binascii.crc_hqx(chunk, 0xFFFF)
-                pkt = (
-                    seq.to_bytes(3, "big")
-                    + crc.to_bytes(2, "big")
-                    + bytes(config.header_bytes - 5)
-                    + chunk
-                )
-                sock.sendto(pkt, ("127.0.0.1", config.client_video_port))
-            time.sleep(0.05)
-        sock.close()
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    return t
 
     def _extract_frames(self) -> None:
         """Parse buffered JPEG data into frames and dispatch them."""
@@ -216,6 +170,60 @@ def start_dummy_camera(config: StreamConfig, frame: Image.Image, count: int = 1)
                     self.frame_queue.put_nowait(img)
                 except queue.Full:
                     pass
+            self.last_packet_count = self.current_packet_count
+            self.current_packet_count = 0
+            logging.debug("frame assembled with %d packets", self.last_packet_count)
             if self.config.jitter_delay:
                 time.sleep(self.config.jitter_delay / 1000.0)
+
+    def check_connection(self, timeout: float = 2.0) -> bool:
+        """Return True if packets arrive within `timeout` seconds."""
+        start = time.monotonic()
+        last = self.last_frame_time
+        while time.monotonic() - start < timeout:
+            if self.last_frame_time != last:
+                return True
+            time.sleep(0.1)
+        logging.error("no packets received within %.1fs", timeout)
+        if self.sock and self.sock.getsockname()[1] != self.config.client_video_port:
+            logging.error(
+                "socket bound to %d instead of %d",
+                self.sock.getsockname()[1],
+                self.config.client_video_port,
+            )
+        return False
+
+
+def start_dummy_camera(config: StreamConfig, frame: Image.Image, count: int = 1) -> threading.Thread:
+    """Send `count` JPEG frames to the client using an 8 byte header."""
+
+    def _run() -> None:
+        video_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        audio_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            video_sock.bind((config.cam_ip, 8080))
+            audio_sock.bind((config.cam_ip, 8070))
+        except Exception:
+            video_sock.bind((config.cam_ip, 0))
+            audio_sock.bind((config.cam_ip, 0))
+        buf = io.BytesIO()
+        frame.save(buf, format="JPEG", quality=95)
+        payload = buf.getvalue()
+        chunk_size = config.chunk_size or 1024
+        for _ in range(count):
+            seq = 0
+            for offset in range(0, len(payload), chunk_size):
+                chunk = payload[offset : offset + chunk_size]
+                crc = binascii.crc_hqx(chunk, 0xFFFF)
+                header = seq.to_bytes(3, "big") + crc.to_bytes(2, "big") + b"\x00\x00\x00"
+                pkt = header + chunk
+                video_sock.sendto(pkt, ("127.0.0.1", config.client_video_port))
+                seq += 1
+            time.sleep(0.05)
+        video_sock.close()
+        audio_sock.close()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return t
 
