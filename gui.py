@@ -42,6 +42,12 @@ class CameraApp:
         self.root.title("AP Camera Receiver")
         self.config = StreamConfig.load()
         self.processor = FrameProcessor()
+        self.processor.target_size = (self.config.display_width, self.config.display_height)
+        self.processor.brightness = self.config.brightness
+        self.processor.contrast = self.config.contrast
+        self.processor.saturation = self.config.saturation
+        self.processor.hue = self.config.hue
+        self.processor.gamma = self.config.gamma
         self.streamer = CameraStreamer(self.config, self.processor)
 
         self.mic_on = False
@@ -56,6 +62,7 @@ class CameraApp:
 
         self._build_ui()
         self._show_off_message()
+        self.root.after(10, self._poll_frames)
 
     # ----------------- UI SETUP -----------------
     def _build_ui(self):
@@ -125,7 +132,7 @@ class CameraApp:
     # ----------------- STREAM CONTROL -----------------
     def toggle_stream(self):
         if not self.streamer.running:
-            self.streamer.start(self._on_frame)
+            self.streamer.start(self._on_frame_threadsafe)
             self.stream_btn.config(text="Stop Stream")
             self.record_btn.config(state="normal")
         else:
@@ -154,19 +161,22 @@ class CameraApp:
         if self.current_frame is None:
             self._show_off_message()
             return
-        canvas_w = self.canvas.winfo_width()
-        canvas_h = self.canvas.winfo_height()
-        img_w, img_h = self.current_frame.size
-        scale = min(canvas_w / img_w, canvas_h / img_h)
-        new_w = int(img_w * scale)
-        new_h = int(img_h * scale)
-        img = self.current_frame.resize((new_w, new_h), Image.LANCZOS)
-        x = (canvas_w - new_w) // 2
-        y = (canvas_h - new_h) // 2
-        self.tk_image = ImageTk.PhotoImage(img)
-        self.canvas.create_image(x, y, anchor=tk.NW, image=self.tk_image)
-        if self.recording and self.record_indicator_state:
-            self.canvas.create_oval(10, 10, 30, 30, fill="red", tags="record_indicator")
+        try:
+            canvas_w = self.canvas.winfo_width()
+            canvas_h = self.canvas.winfo_height()
+            img_w, img_h = self.current_frame.size
+            scale = min(canvas_w / img_w, canvas_h / img_h)
+            new_w = int(img_w * scale)
+            new_h = int(img_h * scale)
+            img = self.current_frame.resize((new_w, new_h), Image.NEAREST)
+            x = (canvas_w - new_w) // 2
+            y = (canvas_h - new_h) // 2
+            self.tk_image = ImageTk.PhotoImage(img)
+            self.canvas.create_image(x, y, anchor=tk.NW, image=self.tk_image)
+            if self.recording and self.record_indicator_state:
+                self.canvas.create_oval(10, 10, 30, 30, fill="red", tags="record_indicator")
+        except Exception as exc:
+            print(f"Display error: {exc}")
 
     def _align_frame(self, prev: Image.Image | None, curr: Image.Image, max_offset: int = 10) -> tuple[Image.Image, int]:
         if prev is None:
@@ -291,7 +301,22 @@ class CameraApp:
         was_running = self.streamer.running
         if was_running:
             self.streamer.stop()
+        self.processor.target_size = (self.config.display_width, self.config.display_height)
+        self.processor.brightness = self.config.brightness
+        self.processor.contrast = self.config.contrast
+        self.processor.saturation = self.config.saturation
+        self.processor.hue = self.config.hue
+        self.processor.gamma = self.config.gamma
         self.streamer = CameraStreamer(self.config, self.processor)
         if was_running:
-            self.streamer.start(self._on_frame)
+            self.streamer.start(self._on_frame_threadsafe)
         self.align_threshold.set(self.config.alignment_threshold)
+
+    def _on_frame_threadsafe(self, img):
+        self.root.after_idle(self._on_frame, img)
+
+    def _poll_frames(self):
+        while self.streamer and not self.streamer.frame_queue.empty():
+            img = self.streamer.frame_queue.get()
+            self._on_frame_threadsafe(img)
+        self.root.after(10, self._poll_frames)
