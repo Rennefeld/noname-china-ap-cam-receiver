@@ -1,0 +1,12 @@
+{
+  "cam_ip": "192.168.4.153",
+  "cam_video_port": 8080,
+  "cam_audio_port": 8082,
+  "client_video_port": 53310,
+  "client_audio_port": 53311,
+  "frame_buffer_size": 8388608,
+  "header_bytes": 22,
+  "jitter_delay": 0,
+  "packets_per_frame": 1,
+  "keepalive_interval": 0.0
+}
