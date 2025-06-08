@@ -20,6 +20,13 @@ class StreamConfig:
     packets_per_frame: int = 1
     keepalive_interval: float = 0.0
     alignment_threshold: int = 20
+    display_width: int = 640
+    display_height: int = 480
+    brightness: float = 1.0
+    contrast: float = 1.0
+    saturation: float = 1.0
+    hue: float = 0.0
+    gamma: float = 1.0
 
     def save(self, path: str = CONFIG_PATH) -> None:
         with open(path, "w", encoding="utf-8") as fh:
